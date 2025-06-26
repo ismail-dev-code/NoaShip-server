@@ -5,6 +5,8 @@ const { MongoClient, ObjectId } = require("mongodb");
 
 // config
 dotenv.config();
+const stripe = require("stripe")(process.env.PAYMENT_GATEWAY_KEY);
+
 const app = express();
 const port = process.env.PORT || 5000;
 
@@ -22,6 +24,7 @@ async function run() {
     const db = client.db("parcelDB");
     const parcelsCollection = db.collection("parcels");
     const paymentsCollection = db.collection("payments");
+
     // Create new parcel
     app.post("/parcels", async (req, res) => {
       const newParcel = req.body;
@@ -67,26 +70,20 @@ async function run() {
         res.status(500).send({ message: "Failed to fetch parcel" });
       }
     });
-    app.post("/tracking", async (req, res) => {
-      const {
-        tracking_id,
-        parcel_id,
-        status,
-        message,
-        updated_by = "",
-      } = req.body;
 
-      const log = {
-        tracking_id,
-        parcel_id: parcel_id ? new ObjectId(parcel_id) : undefined,
-        status,
-        message,
-        time: new Date(),
-        updated_by,
-      };
+    // Get tracking logs by tracking ID
+    app.get("/tracking/:trackingId", async (req, res) => {
+      try {
+        const trackingId = req.params.trackingId;
+        const logs = await parcelsCollection.findOne({
+          trackingId: trackingId,
+        });
 
-      const result = await trackingCollection.insertOne(log);
-      res.send({ success: true, insertedId: result.insertedId });
+        res.send(logs);
+      } catch (error) {
+        console.error("Failed to fetch tracking logs:", error);
+        res.status(500).send({ message: "Failed to get tracking data" });
+      }
     });
 
     app.get("/payments", async (req, res) => {
