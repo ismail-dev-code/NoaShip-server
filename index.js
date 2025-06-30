@@ -266,7 +266,7 @@ async function run() {
 
     app.patch("/riders/:id/status", async (req, res) => {
       const { id } = req.params;
-      const { status } = req.body;
+      const { status, email } = req.body;
       const query = { _id: new ObjectId(id) };
       const updateDoc = {
         $set: {
@@ -276,35 +276,92 @@ async function run() {
 
       try {
         const result = await ridersCollection.updateOne(query, updateDoc);
+
+        // update user role for accepting rider
+        if (status === "active") {
+          const userQuery = { email };
+          const userUpdateDoc = {
+            $set: {
+              role: "rider",
+            },
+          };
+          const roleResult = await usersCollection.updateOne(
+            userQuery,
+            userUpdateDoc
+          );
+          console.log(roleResult.modifiedCount);
+        }
+
         res.send(result);
       } catch (err) {
         res.status(500).send({ message: "Failed to update rider status" });
       }
     });
+    app.get("/users/search", async (req, res) => {
+      const emailQuery = req.query.email;
+      if (!emailQuery) {
+        return res.status(400).send({ message: "Missing email query" });
+      }
 
-    app.get("/dashboard-stats", async (req, res) => {
-  try {
-    const [userCount, parcelCount, activeRiderCount, pendingRiderCount] = await Promise.all([
-      usersCollection.countDocuments(),
-      parcelsCollection.countDocuments(),
-      ridersCollection.countDocuments({ status: "active" }),
-      ridersCollection.countDocuments({ status: "pending" }),
-    ]);
+      const regex = new RegExp(emailQuery, "i"); // case-insensitive partial match
 
-    const pendingParcels = await parcelsCollection.countDocuments({ status: "pending" });
-
-    res.send({
-      totalUsers: userCount,
-      totalParcels: parcelCount,
-      pendingParcels,
-      activeRiders: activeRiderCount,
-      pendingRiders: pendingRiderCount,
+      try {
+        const users = await usersCollection
+          .find({ email: { $regex: regex } })
+          // .project({ email: 1, createdAt: 1, role: 1 })
+          .limit(10)
+          .toArray();
+        res.send(users);
+      } catch (error) {
+        console.error("Error searching users", error);
+        res.status(500).send({ message: "Error searching users" });
+      }
     });
-  } catch (error) {
-    console.error("Failed to load dashboard stats:", error);
-    res.status(500).send({ message: "Failed to load dashboard stats" });
-  }
-});
+    app.patch("/users/:id/role", verifyFBToken, verifyAdmin, async (req, res) => {
+            const { id } = req.params;
+            const { role } = req.body;
+
+            if (!["admin", "user"].includes(role)) {
+                return res.status(400).send({ message: "Invalid role" });
+            }
+
+            try {
+                const result = await usersCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: { role } }
+                );
+                res.send({ message: `User role updated to ${role}`, result });
+            } catch (error) {
+                console.error("Error updating user role", error);
+                res.status(500).send({ message: "Failed to update user role" });
+            }
+        });
+    app.get("/dashboard-stats", async (req, res) => {
+      try {
+        const [userCount, parcelCount, activeRiderCount, pendingRiderCount] =
+          await Promise.all([
+            usersCollection.countDocuments(),
+            parcelsCollection.countDocuments(),
+            ridersCollection.countDocuments({ status: "active" }),
+            ridersCollection.countDocuments({ status: "pending" }),
+          ]);
+
+        const pendingParcels = await parcelsCollection.countDocuments({
+          status: "pending",
+        });
+
+        res.send({
+          totalUsers: userCount,
+          totalParcels: parcelCount,
+          pendingParcels,
+          activeRiders: activeRiderCount,
+          pendingRiders: pendingRiderCount,
+        });
+      } catch (error) {
+        console.error("Failed to load dashboard stats:", error);
+        res.status(500).send({ message: "Failed to load dashboard stats" });
+      }
+    });
 
     // app.post("/tracking", async (req, res) => {
     //   const {
