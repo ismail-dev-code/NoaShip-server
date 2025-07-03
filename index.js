@@ -14,7 +14,7 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-const serviceAccount = require("./firebase-admin-key.json");
+const serviceAccount = require("./noaship-firebase-key.json");
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
@@ -57,7 +57,7 @@ async function run() {
         req.decoded = decoded;
         next();
       } catch (error) {
-      
+      console.log(error);
         return res.status(403).send({ message: "forbidden access" });
       }
     };
@@ -74,6 +74,7 @@ async function run() {
             const email = req.decoded.email;
             const query = { email }
             const user = await usersCollection.findOne(query);
+            console.log(user);
             if (!user || user.role !== 'rider') {
                 return res.status(403).send({ message: 'forbidden access' })
             }
@@ -138,6 +139,28 @@ async function run() {
         res.status(500).send({ message: "Failed to fetch parcel" });
       }
     });
+     app.post("/tracking", async (req, res) => {
+      const {
+        tracking_id,
+        parcel_id,
+        status,
+        message,
+        updated_by = "",
+      } = req.body;
+
+      const log = {
+        tracking_id,
+        parcel_id: parcel_id ? new ObjectId(parcel_id) : undefined,
+        status,
+        message,
+        time: new Date(),
+        updated_by,
+      };
+
+      const result = await trackingCollection.insertOne(log);
+      res.send({ success: true, insertedId: result.insertedId });
+    });
+
 
     // Get tracking logs by tracking ID
     app.get("/tracking/:trackingId", async (req, res) => {
@@ -605,28 +628,7 @@ async function run() {
       }
     });
 
-    app.post("/tracking", async (req, res) => {
-      const {
-        tracking_id,
-        parcel_id,
-        status,
-        message,
-        updated_by = "",
-      } = req.body;
-
-      const log = {
-        tracking_id,
-        parcel_id: parcel_id ? new ObjectId(parcel_id) : undefined,
-        status,
-        message,
-        time: new Date(),
-        updated_by,
-      };
-
-      const result = await trackingCollection.insertOne(log);
-      res.send({ success: true, insertedId: result.insertedId });
-    });
-
+   
     // user related api
     app.post("/users", async (req, res) => {
       const email = req.body.email;
