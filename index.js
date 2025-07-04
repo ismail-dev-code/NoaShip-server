@@ -601,7 +601,7 @@ async function run() {
         res.status(500).send({ message: "Failed to get role" });
       }
     });
-    // get admin dashboard status here
+    // admin, rider and user dashboard related APIs here
    app.get('/parcels/delivery/status-count', async (req, res) => {
             const pipeline = [
                 {
@@ -625,7 +625,111 @@ async function run() {
             res.send(result);
         })
 
-   
+   app.get('/parcels/rider/status-count', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).send({ message: "Email is required" });
+
+  // Get rider name from DB 
+  const rider = await ridersCollection.findOne({ email });
+  if (!rider) return res.status(404).send({ message: "Rider not found" });
+
+  const pipeline = [
+    { $match: { assigned_rider_name: rider.name } },
+    {
+      $group: {
+        _id: '$deliveryStatus',
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        status: '$_id',
+        count: 1,
+        _id: 0,
+      },
+    },
+  ];
+
+  const result = await parcelsCollection.aggregate(pipeline).toArray();
+  res.send(result);
+});
+
+app.get('/parcels/user/status-count', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).send({ message: "Email is required" });
+
+  const pipeline = [
+    {
+      $match: {
+        createdBy: email,
+        paymentStatus: "paid" 
+      }
+    },
+    {
+      $group: {
+        _id: '$deliveryStatus',
+        count: { $sum: 1 },
+      },
+    },
+    {
+      $project: {
+        status: '$_id',
+        count: 1,
+        _id: 0,
+      },
+    },
+  ];
+
+  const result = await parcelsCollection.aggregate(pipeline).toArray();
+  res.send(result);
+});
+
+app.get('/payments/user/summary', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).send({ message: "Email required" });
+
+  const paidCount = await paymentsCollection.countDocuments({ email });
+  const totalPaid = await paymentsCollection.aggregate([
+    { $match: { email } },
+    {
+      $group: {
+        _id: null,
+        total: { $sum: '$amount' }
+      }
+    }
+  ]).toArray();
+
+  res.send({
+    paidCount,
+    totalPaid: totalPaid[0]?.total || 0
+  });
+});
+app.get('/parcels/user/recent', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).send({ message: "Email required" });
+
+  const recent = await parcelsCollection
+    .find({ createdBy: email })
+    .sort({ _id: -1 }) 
+    .limit(5)
+    .toArray();
+
+  res.send(recent);
+});
+app.get('/payments/user/recent', async (req, res) => {
+  const { email } = req.query;
+  if (!email) return res.status(400).send({ message: "Email required" });
+
+  const recent = await paymentsCollection
+    .find({ email })
+    .sort({ paid_at: -1 })
+    .limit(5)
+    .toArray();
+
+  res.send(recent);
+});
+
+
     // user related api
     app.post("/users", async (req, res) => {
       const email = req.body.email;
@@ -654,6 +758,45 @@ async function run() {
       const result = await usersCollection.insertOne(user);
       res.send(result);
     });
+    // users can update their profile
+app.patch("/users/update-profile", async (req, res) => {
+  const { email, newName, newEmail, newPhoto } = req.body;
+
+  if (!email) {
+    return res.status(400).send({ message: "Current email is required" });
+  }
+
+  const updateDoc = {};
+  if (newName) updateDoc.name = newName;
+  if (newEmail) updateDoc.email = newEmail;
+  if (newPhoto) updateDoc.photo = newPhoto;
+
+  const result = await usersCollection.updateOne(
+    { email },
+    { $set: updateDoc }
+  );
+
+  res.send(result);
+});
+
+
+
+    // Get user profile by email
+app.get("/users/profile", async (req, res) => {
+  const email = req.query.email;
+  if (!email) return res.status(400).send({ message: "Email is required" });
+
+  const user = await usersCollection.findOne({ email });
+  if (!user) return res.status(404).send({ message: "User not found" });
+
+  // Send only needed info
+  res.send({
+    email: user.email,
+    name: user.name,
+    role: user.role,
+    last_log_in: user.last_log_in,
+  });
+});
 
     console.log("Parcel server connected to MongoDB");
   } catch (error) {
