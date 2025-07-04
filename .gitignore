@@ -2,4 +2,3 @@ node_modules
 .env
 .vercel
 .vscode
-noaship-firebase-key.json
