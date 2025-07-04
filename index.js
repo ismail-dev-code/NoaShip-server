@@ -601,32 +601,29 @@ async function run() {
         res.status(500).send({ message: "Failed to get role" });
       }
     });
-    app.get("/dashboard-stats", async (req, res) => {
-      try {
-        const [userCount, parcelCount, activeRiderCount, pendingRiderCount] =
-          await Promise.all([
-            usersCollection.countDocuments(),
-            parcelsCollection.countDocuments(),
-            ridersCollection.countDocuments({ status: "active" }),
-            ridersCollection.countDocuments({ status: "pending" }),
-          ]);
+    // get admin dashboard status here
+   app.get('/parcels/delivery/status-count', async (req, res) => {
+            const pipeline = [
+                {
+                    $group: {
+                        _id: '$deliveryStatus',
+                        count: {
+                            $sum: 1
+                        }
+                    }
+                },
+                {
+                    $project: {
+                        status: '$_id',
+                        count: 1,
+                        _id: 0
+                    }
+                }
+            ];
 
-        const pendingParcels = await parcelsCollection.countDocuments({
-          status: "pending",
-        });
-
-        res.send({
-          totalUsers: userCount,
-          totalParcels: parcelCount,
-          pendingParcels,
-          activeRiders: activeRiderCount,
-          pendingRiders: pendingRiderCount,
-        });
-      } catch (error) {
-        console.error("Failed to load dashboard stats:", error);
-        res.status(500).send({ message: "Failed to load dashboard stats" });
-      }
-    });
+            const result = await parcelsCollection.aggregate(pipeline).toArray();
+            res.send(result);
+        })
 
    
     // user related api
